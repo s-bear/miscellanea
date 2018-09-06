@@ -1,0 +1,12 @@
+#logging.sh
+
+#This is free and unencumbered software released into the public domain.
+
+#this is how you can redirect your stdout and stderr to a file
+#while also printing them:
+
+# >(command) : Process substitution--refer to command's input as a file
+#tee: -a appends, -i ignores interrupts
+#exec without a command applied redirections to the current shell
+exec > >(tee -ai "$LOGFILE")
+exec 2> >(tee -ai "$LOGFILE" >&2)
