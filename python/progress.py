@@ -191,9 +191,9 @@ class Progress:
             if self.current_chars is not None:
                 dc = self.bar_width - self.current_chars
                 if ansi.len(s) > dc:
-                    s = ' '*dc + Progress.bar_chars[4]
+                    s = ' '*dc + ansi.style(Progress.bar_chars[4],bold=True)
                 else:
-                    s += ' '*(dc - ansi.len(s)) + Progress.bar_chars[4]
+                    s += ' '*(dc - ansi.len(s)) + ansi.style(Progress.bar_chars[4],bold=True)
                 s += ' ' + Progress.cont_str
             
             self.print(s, flush=True)
@@ -238,7 +238,7 @@ class Progress:
         #otherwise, do we need to print prior progress?
         elif self.current_chars is None:
             self.current_chars = int(self.current_progress*cpp)
-            s += ansi.style(Progress.bar_chars[2]*self.current_chars,fg=6)
+            s += Progress.bar_chars[2]*self.current_chars
         
         #record fresh progress, can't exceed the total
         self.current_progress = min(amt, self.total_progress)
