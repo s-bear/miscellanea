@@ -71,7 +71,7 @@ class Progress:
     __depth = 0
     __stack = []
 
-    def __init__(self, message, total=100):
+    def __init__(self, message, total=100, quiet=False):
         """__init__(message, total)
         Parameters
         ----------
@@ -96,6 +96,11 @@ class Progress:
         self.status_len = 1 + max(ansi.len(Progress.ok_str), ansi.len(Progress.fail_str), ansi.len(Progress.cont_str))
         #space + [ + min_bar_width + ] + status_len:
         self.min_bar_len = 3 + Progress.min_bar_width + self.status_len
+
+        self.quiet = quiet
+
+    def print(self,*args,**kwargs):
+        if not self.quiet: print(*args,**kwargs)
 
     def indent(self,msg,depth=None,pfx=None,sep='\n',width=None, crop=False):
         """indent(msg, depth=None, pfx=None, sep='\n', width=None, crop=False)
@@ -167,10 +172,7 @@ class Progress:
         self.avail_len = Progress.disp_width - ansi.len(lines[-1])
 
         #print the lines
-        for line in lines[:-1]:
-            print(line)
-        #on the last line, no newline, flush
-        print(lines[-1],end='',flush=True)
+        self.print(*lines,sep='\n',end='',flush=True)
         return self
 
     def interrupt(self, message=None):
@@ -194,17 +196,17 @@ class Progress:
                     s += ' '*(dc - ansi.len(s)) + Progress.bar_chars[4]
                 s += ' ' + Progress.cont_str
             
-            print(s, flush=True)
+            self.print(s, flush=True)
             self.interrupted = True
         if message is not None:
-            print(self.indent(message), flush=True)
+            self.print(self.indent(message), flush=True)
 
     def _continue(self):
         if self.interrupted:
             #continue by reprinting the message
             #if the message is longer than one line, crop it down
             msg = self.indent(self.msg, self.depth, crop=True)
-            print(msg,end='')
+            self.print(msg,end='')
 
             self.avail_len = Progress.disp_width - ansi.len(msg)
             self.bar_width = None
@@ -224,7 +226,7 @@ class Progress:
             self.bar_width = self.avail_len - (3 + self.status_len)
             if self.bar_width < Progress.min_bar_width:
                 # No. go to a new line
-                print(self.indent(''),end='')
+                self.print(self.indent(''),end='')
             s += ' ' + ansi.style(Progress.bar_chars[0],bold=True)
         
         #characters per unit progress
@@ -257,7 +259,7 @@ class Progress:
             if self.current_progress == self.total_progress:
                 s += ansi.style(Progress.bar_chars[4],bold=True)
 
-        if do_flush or s: print(s, end='',flush=True)
+        if do_flush or s: self.print(s, end='',flush=True)
 
     def __exit__(self,etype,eval,trace):
         self._continue()
@@ -270,7 +272,7 @@ class Progress:
         else:
             msg = ' ' + Progress.fail_str
         
-        print(msg, flush=True)
+        self.print(msg, flush=True)
         #revert depth counter
         Progress.__stack.pop()
         Progress.__depth = self.depth
