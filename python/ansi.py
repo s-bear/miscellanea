@@ -5,7 +5,7 @@
 #try the colorama package for displaying ansi coded text on windows
 
 import re
-
+_len = len
 """ANSI color codes and helpful functions"""
 #esc_re = re.compile(r'\x1B([@-_])')
 CSI_RE = re.compile(r'((?:\x1B\[[0-?]*[ -/]*[@-~])+)')
@@ -50,19 +50,16 @@ WHITE = 7
 
 def fg3(n):
     return '\x1B[{}m'.format(30+n)
-
 def fg256(n):
     return '\x1B[38;5;{}m'.format(n)
-
 def fgrgb(r,g,b):
     return '\x1B[38;2;{};{};{}m'.format(r,g,b)
-
 def fg(*args):
-    if len(args) == 1:
+    if _len(args) == 1:
         x = args[0]
         if x < 8: return fg3(x)
         else: return fg256(x)
-    elif len(args) == 3:
+    elif _len(args) == 3:
         return fgrgb(*args)
     else:
         return FG_DEFAULT
@@ -76,7 +73,7 @@ def bg256(n):
 def bgrgb(r,g,b):
     return '\x1B[48;2;{};{};{}m'.format(r,g,b)
 def bg(*args):
-    if len(args) == 1:
+    if _len(args) == 1:
         x = args[0]
         if isinstance(x,(tuple,list)):
             return bg(*x)
@@ -84,7 +81,7 @@ def bg(*args):
             return bg3(x)
         else:
             return bg256(x)
-    elif len(args) == 3:
+    elif _len(args) == 3:
         return bgrgb(*args)
     else:
         return BG_DEFAULT
@@ -96,9 +93,11 @@ def split(s):
     return CSI_RE.split(s)
 
 def len(s):
-    return len(strip(s))
+    return _len(strip(s))
 
 def style(s, fg=None, bg=None, reset=True, bold=False, dim=False, italic=False, underline=False, strike=False, code=None):
+    _fg = globals()['fg']
+    _bg = globals()['bg']
     ss = ''
     if code is not None: ss += code
     if bold: ss += BOLD
@@ -106,8 +105,8 @@ def style(s, fg=None, bg=None, reset=True, bold=False, dim=False, italic=False, 
     if italic: ss += ITALIC
     if underline: ss += UNDERLINE
     if strike: ss += STRIKE
-    if fg is not None: ss += fg(fg)
-    if bg is not None: ss += bg(bg)
+    if fg is not None: ss += _fg(fg)
+    if bg is not None: ss += _bg(bg)
     if reset:
         return ss + s + RESET
     else:
