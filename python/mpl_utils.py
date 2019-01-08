@@ -6,6 +6,7 @@
 import numpy as np
 from numpy import ma
 import matplotlib as mpl
+import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap, Normalize
 from matplotlib.cm import ScalarMappable
 from bisect import bisect_left, bisect_right
@@ -46,7 +47,7 @@ def colorline(x, y, z=None, cmap=None, vmin=None, vmax=None,**args):
     
     points = np.array([x, y]).T.reshape(-1, 1, 2)
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
-    return LineCollection(segments, array=z, cmap=cmap, norm=norm, **args)
+    return mpl.collections.LineCollection(segments, array=z, cmap=cmap, norm=norm, **args)
 
 def symlog(v, linthresh=1, linscale=1, base=10):
     """apply symlog transform to v
@@ -72,11 +73,10 @@ def symlog(v, linthresh=1, linscale=1, base=10):
 
 def isymlog(v, linthresh=1, linscale=1, base=10):
     """apply inverse symlog transform to v"""
-    v = asarray(v)
+    v = np.asarray(v)
     ls = linscale
     lt = linthresh
     ilt = lt*ls #symlog(lt, lt, linscale, base)
-    lb = log(base)
 
     s = np.sign(v)
     m = ma.masked_inside(v, -ilt, ilt, copy=False)
@@ -90,7 +90,7 @@ def ellipse(xx,yy,n=50,ax=None,xy0=(0,0),tup=True,**plot_args):
     """xx is major axis vector, yy is minor axis vector, n is points"""
     xx,yy = np.array(xx), np.array(yy)
     xf = np.concatenate((xx[None],yy[None])).T
-    t = np.linspace(0,2*pi,n)
+    t = np.linspace(0,2*np.pi,n)
     ell = np.dot(xf,np.array((np.cos(t),np.sin(t))))
     if ax is not None:
         ax.plot(ell[0]+xy0[0],ell[1]+xy0[1],**plot_args)
@@ -107,7 +107,7 @@ def tweak_x(x,y,w,h,eps=None):
     returns a list of new x coordinates
     """
     if eps is None:
-        wx2 = nextafter(w*2,0)
+        wx2 = np.nextafter(w*2,0)
     else:
         wx2 = w*2-eps
     new_x = None
@@ -118,7 +118,7 @@ def tweak_x(x,y,w,h,eps=None):
             continue
         #find i,j such that for all y in y_y[i:j], py-h <= y <= py+h
         if eps is None:
-            pymh,pyph = nextafter(py-h,inf), nextafter(py+h,-inf)
+            pymh, pyph = np.nextafter(py-h, np.inf), np.nextafter(py+h, -np.inf)
         else:
             pymh,pyph = py-h+eps, py+h-eps
         i = bisect_left(y_y,pymh)
@@ -128,10 +128,10 @@ def tweak_x(x,y,w,h,eps=None):
             new_x.append(px); x_y.insert(i,px); y_y.insert(i,py)
             continue
         #sort by x, decreasing so that we prefer positive tweaks
-        x_x = [inf] + sorted(x_y[i:j],reverse=True)+[-inf]
+        x_x = [np.inf] + sorted(x_y[i:j], reverse=True)+[-np.inf]
         #iterate thru candidate positions
         #and choose the closest
-        nx = inf
+        nx = np.inf
         cps = []
         for k in range(len(x_x)-1):
             #is the gap between these points big enough?
@@ -269,7 +269,7 @@ def make_mappable(cmap,vmin=None,vmax=None,norm=None):
 def apply_cmap(X,cmap=None,norm=None,vmin=None,vmax=None,alpha=None,bytes=False):
     if norm is None:
         norm = Normalize(vmin,vmax)
-    return cmap(np.norm(X),alpha,bytes)
+    return cmap(np.linalg.norm(X),alpha,bytes)
 
 def make_colormap(name,colors,N=None,gamma=1.0,typ='smooth'):
     """make a matplotlib colormap. typ is either smooth or segmented"""
@@ -298,15 +298,16 @@ ihsv = make_colormap('ihsv',['#FD8A69','#D7A043','#9CB34C','#58BC7D','#19BCB6','
 
 def _smooth_cmap(a,b,c,f=None):
     #smoothly vary colors from a,b,c using f
-    if f is None: f = lambda x: sqrt(1+3*x**2)-1
+    if f is None: f = lambda x: np.sqrt(1+3*x**2)-1
     ra,ga,ba = mpl.colors.colorConverter.to_rgb(a)
     rb,gb,bb = mpl.colors.colorConverter.to_rgb(b)
     rc,gc,bc = mpl.colors.colorConverter.to_rgb(c)
     def cf(a,b,c):
-        return lambda x: where(x<0.5, b+(a-b)*f(1-2*x), b+(c-b)*f(2*x-1))
+        return lambda x: np.where(x < 0.5, b+(a-b)*f(1-2*x), b+(c-b)*f(2*x-1))
     return {'red': cf(ra,rb,rc),'green':cf(ga,gb,gc),'blue':cf(ba,bb,bc)}
 
-f_cusp = lambda x: sqrt(((x+1)**2-1)/3)
+
+def f_cusp(x): return np.sqrt(((x+1)**2-1)/3)
 
 RdKBu = make_colormap('RdKBu',_smooth_cmap('#ff3030','0','#3030ff',f_cusp),512)
 RdKBuL = make_colormap('RdKBuL',_smooth_cmap('#ff8888','0.5','#8888ff',f_cusp),512)
@@ -375,7 +376,7 @@ def _mticks(axis,locs=None,labels=None,**kw):
         #evenly divide axis by number of ticks
         #this does not play well with nonlinear scales!
         a,b = axis.get_view_interval()
-        locs = linspace(a,b,nticks)
+        locs = np.linspace(a, b, nticks)
 
     if locs is not None:
         if isinstance(locs, tck.Locator):
@@ -460,10 +461,10 @@ def mxticks(*args,**kw):
         raise TypeError('Illegal number of arguments to mxticks')
     ax = kw.pop('axes',None)
     if ax is None:
-        ax = gca()
+        ax = plt.gca()
     locs,labels = _mticks(ax.xaxis,*args,**kw)
-    draw_if_interactive()
-    return locs, silent_list('Text xticklabel',labels)
+    plt.draw_if_interactive()
+    return locs, plt.silent_list('Text xticklabel', labels)
 
 def myticks(*args,**kw):
     """myticks(*args,**kw)
@@ -497,7 +498,7 @@ def myticks(*args,**kw):
         raise TypeError('Illegal number of arguments to myticks')
     ax = kw.pop('axes',None)
     if ax is None:
-        ax = gca()
+        ax = plt.gca()
     locs,labels = _mticks(ax.yaxis,*args,**kw)
-    draw_if_interactive()
-    return locs, silent_list('Text yticklabel',labels)
+    plt.draw_if_interactive()
+    return locs, plt.silent_list('Text yticklabel', labels)
