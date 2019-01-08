@@ -23,13 +23,13 @@ class sobol:
             bit += 1
         return bit
 
-    dim_max = 40
-    log_max = 30
-    poly = [1, 3, 7, 11, 13, 19, 25, 37, 59, 47, 61, 55, 41, 67, 97, 91, 109, 103, 115, 131, 193, 137, 145, 143, 241, 157, 185, 167, 229, 171, 213, 191, 253, 203, 211, 239, 247, 285, 369, 299]
-    atmost = 2**log_max - 1
-    maxcol = i4_bit_hi1.__func__(atmost) #.__func__ is necessary because sobol isn't defined yet!
+    _dim_max = 40
+    _log_max = 30
+    _poly = [1, 3, 7, 11, 13, 19, 25, 37, 59, 47, 61, 55, 41, 67, 97, 91, 109, 103, 115, 131, 193, 137, 145, 143, 241, 157, 185, 167, 229, 171, 213, 191, 253, 203, 211, 239, 247, 285, 369, 299]
+    _atmost = 2**_log_max - 1
+    _maxcol = i4_bit_hi1.__func__(_atmost) #.__func__ is necessary because sobol isn't defined yet!
     
-    _v = np.zeros((dim_max,log_max),np.int32)
+    _v = np.zeros((_dim_max,_log_max),np.int32)
     _v[0:40,0] = np.transpose([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
     _v[2:40,1] = np.transpose([1, 3, 1, 3, 1, 3, 3, 1, 3, 1, 3, 1, 3, 1, 1, 3, 1, 3, 1, 3, 1, 3, 3, 1, 3, 1, 3, 1, 3, 1, 1, 3, 1, 3, 1, 3, 1, 3])
     _v[3:40,2] = np.transpose([7, 5, 1, 3, 3, 7, 5, 5, 7, 7, 1, 3, 3, 7, 5, 1, 1, 5, 3, 3, 1, 7, 5, 1, 3, 3, 7, 5, 1, 1, 5, 7, 7, 5, 1, 3, 3])
@@ -38,18 +38,18 @@ class sobol:
     _v[13:40,5] = np.transpose([37, 33, 7, 5, 11, 39,63, 27, 17, 15, 23, 29, 3, 21, 13, 31, 25, 9, 49, 33, 19, 29, 11, 19, 27, 15, 25])
     _v[19:40,6] = np.transpose([13, 33, 115, 41, 79, 17, 29, 119, 75, 73, 105, 7, 59, 65, 21, 3, 113, 61, 89, 45, 107])
     _v[37:40,7] = np.transpose([7, 23, 39 ])
-    _v[0,0:maxcol] = 1
+    _v[0,0:_maxcol] = 1
 
     def __init__(self, d, seed=0):
-        if d < 1 or sobol.dim_max < d:
-            raise RuntimeError('d ({}) out of range: 1 <= d <= {}'.format(dim_num, sobol.dim_max))
+        if d < 1 or sobol._dim_max < d:
+            raise RuntimeError('d ({}) out of range: 1 <= d <= {}'.format(d, sobol._dim_max))
         self.d = d
         #initialize the remaining values of v given d
         self.v = np.copy(sobol._v)
         for i in range(1, d):
-            #the bits of poly[i] gives the form of polynomial I
-            #find the degree of polynomial I from binary encoding
-            j = sobol.poly[i]
+            #the bits of _poly[i] gives the form of polynomial I
+            #find the degree of _polynomial I from binary encoding
+            j = sobol._poly[i]
             m = sobol.i4_bit_hi1(j)
             #expand this bit pattern to separate components
             includ = np.zeros(m,np.int32)
@@ -57,7 +57,7 @@ class sobol:
                 includ[k] = (j & 1)
                 j //= 2
             #calculate the remaining elements of row I as explained in Bratley & Fox, section 2
-            for j in range(m, sobol.maxcol):
+            for j in range(m, sobol._maxcol):
                 newv = self.v[i,j-m]
                 l = 1
                 for k in range(m):
@@ -67,7 +67,7 @@ class sobol:
                 self.v[i,j] = newv
         #multiply columns of V by appropriate power of 2
         l = 1
-        for j in range(sobol.maxcol-2, -1, -1):
+        for j in range(sobol._maxcol-2, -1, -1):
             l *= 2
             self.v[0:d,j] *= l
         #recipd is 1/(common denominator of elements in v)
@@ -97,8 +97,8 @@ class sobol:
     def next(self):
         """generate the next value in the sequence"""
         l = sobol.i4_bit_lo0(self.seed)
-        if sobol.maxcol < l:
-            raise RuntimeError('Too many calls: L = {} >= MAXCOL = {}'.format(l, sobol.maxcol))
+        if sobol._maxcol < l:
+            raise RuntimeError('Too many calls: L = {} >= MAXCOL = {}'.format(l, sobol._maxcol))
         quasi = np.zeros(self.d)
         for i in range(self.d):
             quasi[i] = self.lastq[i]*self.recipd
@@ -107,15 +107,15 @@ class sobol:
         return quasi
     
     __next__ = next
+    __call__ = next
 
-    def generate(self, m, n, skip):
+    def generate(self, n, skip):
         """generate a sobol sequence
-        m : the spatial dimension
         n : the number of points to generate
         skip : the number of initial points to skip
         """
-        r = np.zeros((m,n))
+        r = np.zeros((self.d,n))
         self.reseed(self.seed + skip)
         for j in range(n):
-            r[0:m,j] = self.next()
+            r[:,j] = self.next()
         return r
