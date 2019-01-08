@@ -109,7 +109,7 @@ class sobol:
     __next__ = next
     __call__ = next
 
-    def generate(self, n, skip):
+    def generate(self, n, skip=0):
         """generate a sobol sequence
         n : the number of points to generate
         skip : the number of initial points to skip
