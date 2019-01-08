@@ -3,20 +3,20 @@
 #This is free and unencumbered software released into the public domain.
 
 #Statistics stuff...
-from pylab import *
+import numpy as np
 from scipy import stats
 
 def lanczos(a,n):
     """lanczos filter kernel, order a, n points"""
-    x = linspace(-a+.5,a-.5,n)
-    y = sinc(x)*sinc(x/a)
+    x = np.linspace(-a+.5,a-.5,n)
+    y = np.sinc(x)*np.sinc(x/a)
     return y/sum(y)
 
 def bin(x,y,bins,xmin=None,xmax=None,min_count=1,keep_oob=True,keep_empty=True):
     """x and y are 1d ndarrays"""
-    x = asarray(x)
-    y = asarray(y)
-    if isscalar(bins):
+    x = np.asarray(x)
+    y = np.asarray(y)
+    if np.isscalar(bins):
         #a number of bins, not the bins 
         if xmin is None:
             xmin = x.min()
@@ -25,14 +25,14 @@ def bin(x,y,bins,xmin=None,xmax=None,min_count=1,keep_oob=True,keep_empty=True):
         nbins = bins
         #set up bins for digitize
         w = (xmax-xmin)/nbins
-        bins = linspace(xmin,xmax,nbins+1) #includes endpoint
+        bins = np.linspace(xmin, xmax, nbins+1)  # includes endpoint
         #bin midpoints
         mids = bins[:-1] + (w/2)
     else:
         nbins = len(bins)-1
         mids = (bins[:-1] + bins[1:])/2
     #digitize x -- get bin index for each x
-    xidx = digitize(x,bins)
+    xidx = np.digitize(x, bins)
     #send ys to the appropriate bin
     y_binned = []
     not_empty = []
@@ -54,25 +54,25 @@ def bin(x,y,bins,xmin=None,xmax=None,min_count=1,keep_oob=True,keep_empty=True):
                 else: 
                     not_empty.append(mids[i-1])
         elif keep_empty:
-            y_binned.append(array([]))
+            y_binned.append(np.array([]))
     if keep_empty:
         return mids, y_binned
     else:
-        return array(not_empty), y_binned
+        return np.array(not_empty), y_binned
 
 def wrap(x,vmin=0.0,vmax=1.0):
     return (x-vmin)%(vmax-vmin)+vmin
 
 def clamp(x,vmin=0.0, vmax=1.0):
-    if isscalar(x):
+    if np.isscalar(x):
         if vmax is not None:
             x = min(x,vmax)
         if vmin is not None:
             x = max(x,vmin)
         return x
     else:
-        x = asarray(x)
-        x_c = copy(x)
+        x = np.asarray(x)
+        x_c = np.copy(x)
         if vmax is not None:
             x_c[x >= vmax] = vmax
         if vmin is not None:
@@ -84,16 +84,16 @@ def bin_wrap(x,y,bins,xmin=None,xmax=None,center=0,min_count=1,keep_empty=True):
     #center should be in [0,0.5]
     #center = 0 -> 1st bin is centered on xmin
     #center = 0.5 -> 1st bin's left edge is at xmin
-    x = asarray(x)
-    y = asarray(y)
-    if isscalar(bins):
+    x = np.asarray(x)
+    y = np.asarray(y)
+    if np.isscalar(bins):
         nbins = bins
         if xmin is None:
             xmin = x.min()
         if xmax is None:
             xmax = x.max()
         w = (xmax-xmin)/nbins
-        bins = linspace(xmin,xmax,nbins+1) + w*(center-0.5)
+        bins = np.linspace(xmin, xmax, nbins+1) + w*(center-0.5)
     
     bmin = bins[0]
     bmax = bins[-1]
@@ -111,10 +111,10 @@ def likelihood_same_mean(mahal_dist,ndims=1):
     return stats.chi2.cdf(mahal_dist**2,ndims)
 
 def mahal_distance_for_likelihood(likelihood,ndims=1):
-    return sqrt(stats.chi2.isf(1-likelihood,ndims))
+    return np.sqrt(stats.chi2.isf(1-likelihood, ndims))
 
 def rms(x,axis=None,keepdims=False):
-    return sqrt(mean(x**2,axis,keepdims=keepdims))
+    return np.sqrt(np.mean(x**2, axis, keepdims=keepdims))
 
 def mean_conf(data,conf=0.90):
     n = len(data)
@@ -124,48 +124,52 @@ def mean_conf(data,conf=0.90):
     iv = stats.t.interval(conf,n-1,scale=se)
     return m,iv
 
-def angle_diff(a1,a2,period=2*pi):
+##########
+# Angles #
+##########
+
+def angle_diff(a1, a2, period=2*np.pi):
     """(a1 - a2 + d) % (2*d) - d; d = period/2"""
     d = period/2
     return ((a1 - a2 + d) % (period)) - d
 
-def angle_mean(ang,axis=None,period=2*pi):
+def angle_mean(ang, axis=None, period=2*np.pi):
     """returns the circular mean of angles"""
     #uses the 1st angular moment:
-    a=2*pi/period
+    a = 2*np.pi/period
     m1 = np.mean(np.exp(1j*ang*a),axis=axis)
     return np.angle(m1)/a
 
-def angle_std(ang,axis=None,period=2*pi):
+def angle_std(ang,axis=None,period=2*np.pi):
     """Returns the circular standard deviation of angles"""
-    a = 2*pi/period
+    a = 2*np.pi/period
     m1 = np.mean(np.exp(1j*ang*a),axis=axis)
     return np.sqrt(-2*np.log(np.abs(m1)))/a
 
-def angle_var(ang,axis=None,period=2*pi):
-    a = 2*pi/period
+def angle_var(ang,axis=None,period=2*np.pi):
+    a = 2*np.pi/period
     m1 = np.mean(np.exp(1j*ang*a),axis=axis)
     return -2*np.log(np.abs(m1))/a**2
 
-def angle_mean_std(ang,axis=None,period=2*pi):
+def angle_mean_std(ang, axis=None, period=2*np.pi):
     """returns the circular mean and standard deviation of angles"""
     #take the 1st angular moment
     # nth moment: m_n = mean(exp(1j*ang)**n)
-    a = 2*pi/period
+    a = 2*np.pi/period
     m1 = np.mean(np.exp(1j*ang*a),axis=axis)
     mean = np.angle(m1)/a
     std = np.sqrt(-2*np.log(np.abs(m1)))/a
     return mean, std
 
-def angle_rms(ang,axis=None,period=2*pi):
+def angle_rms(ang, axis=None, period=2*np.pi):
     """returns the rms of angles, uses the property that rms(x)**2 = mean(x)**2 + std(x)**2"""
     #rms(x)**2 = mean(x)**2 + std(x)**2
     #sqrt(E[X**2]) = E[X]**2 + sqrt(E[(X - E[X])**2])
     m,s = angle_mean_std(ang,axis,period)
-    return hypot(m, s)
+    return np.hypot(m, s)
 
-def angle_wrap(p,period=2*pi):
-    if isscalar(period):
+def angle_wrap(p,period=2*np.pi):
+    if np.isscalar(period):
         vmin = -period/2
         vmax = period/2
     else:
@@ -173,7 +177,7 @@ def angle_wrap(p,period=2*pi):
         vmax = period[1]
     return (p-vmin)%(vmax-vmin)+vmin
 
-def angle_unwrap(p,axis=-1,period=2*pi):
+def angle_unwrap(p,axis=-1,period=2*np.pi):
     """angle_unwrap(p,axis=-1,period=2*pi)
     Unwrap angles by changing deltas between values to their minimum relative to the period
     
@@ -191,52 +195,18 @@ def angle_unwrap(p,axis=-1,period=2*pi):
     out : ndarray
         unwrapped angles
     """
-    p = asarray(p)
+    p = np.asarray(p)
     nd = len(p.shape)
-    dd = diff(p, axis=axis)
+    dd = np.diff(p, axis=axis)
     slice1 = [slice(None, None)]*nd     # full slices
     slice1[axis] = slice(1, None)
     hc = period/2
-    ddmod = mod(dd + hc, period) - hc
-    copyto(ddmod, hc, where=(ddmod == -hc) & (dd > 0))
+    ddmod = np.mod(dd + hc, period) - hc
+    np.copyto(ddmod, hc, where=(ddmod == -hc) & (dd > 0))
     ph_correct = ddmod - dd
-    copyto(ph_correct, 0, where=abs(dd) < hc)
-    up = array(p, copy=True, dtype='d')
+    np.copyto(ph_correct, 0, where=abs(dd) < hc)
+    up = np.array(p, copy=True, dtype='d')
     up[slice1] = p[slice1] + ph_correct.cumsum(axis)
     return up
 
-def circle_mask(radius,size=None,offset=None,inner=0,subsample_limit=4,center=False):
-    def subsample(x,y,sz,r,lim):
-        d = hypot(x,y)
-        if lim==0: #hit recursion limit
-            #return area if x,y is inside circle
-            return sz**2 if d < r else 0.0
-        elif d + 0.70711*sz < r: #totally inside circle
-            return sz**2
-        elif d - 0.70711*sz > r: #totally outside circle
-            return 0.0
-        else: #on edge, recurse into quadrants
-            s,o = sz/2, sz/4
-            return subsample(x+o,y+o,s,r,lim-1) + \
-                   subsample(x+o,y-o,s,r,lim-1) + \
-                   subsample(x-o,y-o,s,r,lim-1) + \
-                   subsample(x-o,y+o,s,r,lim-1)
-    if offset is None:
-        y0,x0 = 0,0
-    else:
-        y0,x0 = offset
-    if size is None:
-        size=2*radius+1
-    if isscalar(size):
-        size = (size,size)
-    if center:
-        y0 += 0.5*size[0]-0.5-radius
-        x0 += 0.5*size[1]-0.5-radius
-    coeffs = empty(size)
-    for r in range(size[0]):
-        for c in range(size[1]):
-            x,y = c-radius,r-radius
-            coeffs[r,c] = subsample(x-x0,y-y0,1,radius,subsample_limit)
-            if inner > 0:   
-                coeffs[r,c] -= subsample(x-x0,y-y0,1,inner,subsample_limit) 
-    return coeffs
+
