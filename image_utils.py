@@ -3,8 +3,117 @@
 #This is free and unencumbered software released into the public domain.
 
 import numpy as np
+from scipy.ndimage.filters import convolve1d
 import skimage as ski
 from .sobol import sobol
+
+from numba import njit, prange
+
+@njit(parallel=True)
+def _corr1d_0(input, filter, output, cval=0.0):
+    """Correlation along axis 0, parallelized for C-order arrays
+    Assuming filter is much smaller than axis"""
+    #3 loops: rows, cols, filter along rows
+    rows, cols = input.shape
+    N = len(filter)
+    n = N//2
+    #access scans whole col of output at once for better cache coherency
+    for r in range(rows):
+        for c in prange(cols):
+            output[r,c] = 0
+            for i in range(N):
+                j = r-n+i
+                if j >= 0 and j < rows:
+                    output[r,c] += input[j,c]*filter[i]
+                else:
+                    output[r,c] += cval*filter[i]
+    return output
+
+@njit(parallel=True)
+def _corr1d_1(input, filter, output, cval=0.0):
+    """Correlation along axis 1, parallelized for C-order arrays
+    Assuming filter is much smaller than axis"""
+    #3 loops: rows, cols, filter along cols
+    rows, cols = input.shape
+    N = len(filter)
+    n = N//2
+    #access pattern scans whole col of input & output at once for better cache coherency
+    for r in range(rows):
+        for c in prange(cols):
+            output[r,c] = 0
+            for i in range(N):
+                j = c-n+i
+                if j >= 0 and j < cols:
+                    output[r,c] += input[r,j]*filter[i]
+                else:
+                    output[r,c] += cval*filter[i]
+    return output
+
+def sepfir2d(input, filters, axes=None, output=None, cval=0.0):
+    """Apply separable filters to a 2D input
+     Parallelized with Numba
+    input : array_like, must be 2D
+    filters : sequence of array_like
+      Sequence of filters to apply along axes. If length 1, will apply the same filter to all axes
+    axes : optional, sequence of int: axes to apply filters to must be valid for a 2D array
+    output : array, optional
+    cval : scalar, optional. Used for out-of-bounds access
+    """
+    if output is None:
+        output = np.empty_like(input)
+    tmp = output
+    if np.isscalar(filters[0]):
+        filters = [np.asarray(filters)]
+    if axes is None:
+        axes = list(range(len(filters)))
+    if np.isscalar(axes):
+        axes = [axes]
+    if len(axes) > 1:
+        tmp = np.empty_like(output)
+        if len(filters) == 1:
+            filters = [filters[0]]*len(axes)
+        if len(axes) & 1 == 1: #pre-swap buffers so that the last write goes to output
+            output,tmp = tmp, output
+    for filt, ax in zip(filters,axes):
+        filt = filt[::-1]
+        output,tmp = tmp, output #swap buffers
+        ax %= 2
+        if ax == 0: _corr1d_0(input,filt,output,cval)
+        else: _corr1d_1(input,filt,output,cval)
+        input = output
+    return output
+
+
+def sepfirnd(input,filters,axes,output=None,mode='reflect',cval=0.0,origin=0):
+    """Apply multiple 1d filters to input using scipy.ndimage.filters.convolve1d
+    input : array_like
+    filters : sequence of array_like
+        Sequence of filters to apply along axes. If length 1, will apply the same filter to all axes.
+    axes : sequence of int
+    output : array, optional
+    mode : {'reflect', 'constant', 'nearest', 'mirror', 'wrap'}, optional
+    cval : scalar, optional
+    origin : int, optional
+    """
+    if output is None:
+        output = np.empty_like(input)
+    tmp = output
+    if np.isscalar(filters[0]):
+        filters = [np.asarray(filters)]
+    if np.isscalar(axes):
+        axes = [axes]
+    if len(axes) > 1:
+        tmp = np.empty_like(output)
+        if len(filters) == 1:
+            filters = [filters[0]]*len(axes)
+        if len(axes) & 1 == 1: #pre-swap so that last write goes to output
+            output,tmp = tmp,output 
+    for filt,ax in zip(filters,axes):
+        output,tmp = tmp,output #swap buffers
+        convolve1d(input,filt,ax,output,mode,cval,origin)
+        input = output
+    return output
+
 #image derivative filters consist of 2 separable filters
 # the interpolation filter and the derivative filter
 # the interpolation filter is applied to the orthogonal axis to the derivative filter
@@ -13,8 +122,8 @@ def sobel_filters():
     returns p, d : p is the interpolation filter, d is the derivative filter
     e.g:
     p,d = sobel_filters()
-    darr_dcol = scipy.signal.sepfir2d(arr, p, d)
-    darr_drow = scipy.signal.sepfir2d(arr, d, p)
+    darr_dx = sepfirnd(arr, (p, d), (0,1)) #apply p to axis 0, d to axis 1
+    darr_dy = sepfirnd(arr, (p, d), (1,0)) #apply p to axis 1, d to axis 0
     """
     return [1,2,1],[1,0,-1]
 
@@ -25,8 +134,8 @@ def farid_filters(n=3):
     returns p, d : p is the interpolation filter, d, is the derivative filter
     e.g:
     p,d = farid_filters(5)
-    darr_dcol = scipy.signal.sepfir2d(arr, p, d)
-    darr_drow = scipy.signal.sepfir2d(arr, d, p)
+    darr_dx = sepfirnd(arr, (p, d), (0,1)) #apply p to axis 0, d to axis 1
+    darr_dy = sepfirnd(arr, (p, d), (1,0)) #apply p to axis 1, d to axis 0
     """
     if n == 3:
         return [0.229879, 0.540242, 0.229879], [0.425287, 0.0, -0.425287]
