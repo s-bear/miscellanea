@@ -198,6 +198,7 @@ def bin(x,y,bins,xmin=None,xmax=None,min_count=1,keep_oob=True,keep_empty=True):
 
 
 def bin_wrap(x,y,bins,xmin=None,xmax=None,center=0,min_count=1,keep_empty=True):
+    """for binning periodic data (like angles)"""
     #center is a relative offset of the 1st bin's center from xmin
     #center should be in [0,0.5]
     #center = 0 -> 1st bin is centered on xmin
