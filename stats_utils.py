@@ -25,6 +25,27 @@ def clip(x, vmin, vmax):
     else:
         return x
 clamp = clip
+@njit(parallel=True)
+def centroid2d(x,y,w):
+    """Return the centroid of a 2D grid
+    x, y : 1d array_like
+      the positions of each w[r,c]. 
+    w : 2d array_like
+      2D array of weights. y corresponds to axis 0
+    Returns
+    mx, my
+    """
+    mx = 0.0
+    my = 0.0
+    s = 0.0
+    for r in prange(w.shape[0]):
+        for c in range(w.shape[1]):
+            s += w[r,c]
+            mx += x[c]*w[r,c]
+            my += y[r]*w[r,c]
+    mx /= s
+    my /= s
+    return (mx, my)
 def lanczos(a,n):
     """lanczos filter kernel, order a, n points"""
     x = np.linspace(-a+.5,a-.5,n)
