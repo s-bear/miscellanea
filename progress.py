@@ -71,7 +71,7 @@ class Progress:
     __depth = 0
     __stack = []
 
-    def __init__(self, message, total=100, quiet=False):
+    def __init__(self, message, total=100, quiet=False, notify=None):
         """__init__(message, total)
         Parameters
         ----------
@@ -79,8 +79,15 @@ class Progress:
             Message printed before the progress bar
         total : number, default 100
             The total value of the full progress bar
+        quiet : bool, default False
+            If true, don't print anything
+        notify : callable (bool), default None
+            If not None, this is called when done.
+            notify(True) on success, notify(False) on failure.
+            Any exceptions raised by notify() will be suppressed.
         """
         self.msg = message
+        self.notify = notify
 
         self.depth = None
 
@@ -215,6 +222,12 @@ class Progress:
             return True
         return False
 
+    def update_increment(self, amt):
+        if self.current_progress is None:
+            self.update(amt)
+        else:
+            self.update(self.current_progress + amt)
+
     def update(self, amt, fail=False):
         #print continuation message if necessary:
         do_flush = self._continue()
@@ -277,4 +290,9 @@ class Progress:
         Progress.__stack.pop()
         Progress.__depth = self.depth
         #True to suppress exception
+        if self.notify is not None:
+            try: 
+                self.notify(etype is None)
+            except:
+                pass
         return False
