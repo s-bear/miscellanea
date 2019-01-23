@@ -3,7 +3,6 @@
 #This is free and unencumbered software released into the public domain.
 
 import numpy as np
-import skimage as ski
 from .sobol import sobol
 #image derivative filters consist of 2 separable filters
 # the interpolation filter and the derivative filter
@@ -96,10 +95,10 @@ def warp_qmc(image, inverse_map, map_args={}, output_shape=None, nval=0., n=9, m
     - `n` increases the time complexity linearly.
     """
     #check and sanitize inputs
-    if preserve_range:
-        image = np.asarray(image, np.double)
-    else:
-        image = ski.img_as_float(image)
+#    if preserve_range:
+#        image = np.asarray(image, np.double)
+#    else:
+#        image = ski.img_as_float(image)
 
     input_shape = np.array(image.shape)
 
