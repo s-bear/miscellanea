@@ -4,8 +4,27 @@
 
 #Statistics stuff...
 import numpy as np
+import numba
+from numba import njit, vectorize, prange
 from scipy import stats
 
+_types = ['i1','u1','i2','u2','i4','u4','i8','u8','f4','f8']
+@vectorize(["{T}({T},{T},{T})".format(T=t) for t in _types],target='parallel')
+def wrap(x, vmin, vmax):
+    """Wrap a value x within bounds (vmin,vmax)"""
+    return (x-vmin) % (vmax-vmin)+vmin
+
+
+@vectorize(["{T}({T},{T},{T})".format(T=t) for t in _types],target='parallel')
+def clip(x, vmin, vmax):
+    """Clip a value x within bounds (vmin, vmax)"""
+    if x < vmin:
+        return vmin
+    elif x > vmax:
+        return vmax
+    else:
+        return x
+clamp = clip
 def lanczos(a,n):
     """lanczos filter kernel, order a, n points"""
     x = np.linspace(-a+.5,a-.5,n)
@@ -60,26 +79,10 @@ def bin(x,y,bins,xmin=None,xmax=None,min_count=1,keep_oob=True,keep_empty=True):
     else:
         return np.array(not_empty), y_binned
 
-def wrap(x,vmin=0.0,vmax=1.0):
-    return (x-vmin)%(vmax-vmin)+vmin
 
-def clamp(x,vmin=0.0, vmax=1.0):
-    if np.isscalar(x):
-        if vmax is not None:
-            x = min(x,vmax)
-        if vmin is not None:
-            x = max(x,vmin)
-        return x
-    else:
-        x = np.asarray(x)
-        x_c = np.copy(x)
-        if vmax is not None:
-            x_c[x >= vmax] = vmax
-        if vmin is not None:
-            x_c[x <= vmin] = vmin
-        return x_c
 
 def bin_wrap(x,y,bins,xmin=None,xmax=None,center=0,min_count=1,keep_empty=True):
+    """for binning periodic data (like angles)"""
     #center is a relative offset of the 1st bin's center from xmin
     #center should be in [0,0.5]
     #center = 0 -> 1st bin is centered on xmin
