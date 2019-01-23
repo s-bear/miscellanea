@@ -25,6 +25,36 @@ def clip(x, vmin, vmax):
     else:
         return x
 clamp = clip
+
+#@vectorize(["i4({T},{T},{T},{T},i4)".format(T=t) for t in ('f4','f8')], target='parallel')
+@vectorize
+def _digitize(x, vmin, vmax, d, n):
+    """Helper for digitize"""
+    if x < vmin:
+        return -1
+    elif x > vmax:
+        return n
+    elif x == vmax:
+        return n-1
+    else:
+        return np.uint32((x-vmin)*d) #n/(vmax-vmin))
+
+@njit(parallel=True)
+def digitize(x, vmin, vmax, n):
+    """Return the bin index of x for n equally spaced bins in (vmin,vmax)
+    For out of bounds x, returns -1 or n"""
+    d = n/(vmax-vmin)
+    return _digitize(x,vmin,vmax,d,n)
+
+def bin_edges(vmin, vmax, n):
+    """Return the bin edges for n equally spaced bins in (vmin, vmax)"""
+    return np.linspace(vmin,vmax,n+1)
+
+def bin_centers(vmin,vmax,n):
+    """return the bin centers for n equally spaced bins in (vmin, vmax)"""
+    dx_2 = (vmax-vmin)/(2*n)
+    return np.linspace(vmin+dx_2,vmax-dx_2,n)
+
 @njit(parallel=True)
 def centroid2d(x,y,w):
     """Return the centroid of a 2D grid
@@ -46,6 +76,177 @@ def centroid2d(x,y,w):
     mx /= s
     my /= s
     return (mx, my)
+
+@njit(parallel=True)
+def _histogram2d(out,x,y,nx,ny,xmin,xmax,ymin,ymax,d,keep):
+    """helper for histogram2d"""
+    dx = nx/(xmax-xmin)
+    dy = ny/(ymax-ymin)
+    nt = numba.config.NUMBA_NUM_THREADS
+    for i in prange(out.size):
+        out.flat[i] = 0
+    #make a buffer for each thread:
+    buf = [out] + [np.zeros(out.shape,out.dtype) for i in range(nt-1)]
+    ss = (x.shape[0] + nt - 1)//nt
+    if keep:
+        for b in prange(nt):
+            for i in range(b*ss,(b+1)*ss):
+                if i >= x.shape[0]: break
+                #do the histogram within each thread
+                r = _digitize(x[i], xmin, xmax, dx, nx)
+                c = _digitize(y[i], ymin, ymax, dy, ny)
+                buf[b][r+1,c+1] += 1
+    else:
+        for b in prange(nt):
+            for i in range(b*ss,(b+1)*ss):
+                if i >= x.shape[0]: break
+                r = _digitize(x[i], xmin, xmax, dx, nx)
+                c = _digitize(y[i], ymin, ymax, dy, ny)
+                if r >= 0 and r < nx and c >= 0 and c < ny:
+                    buf[b][r,c] += 1
+    #reduce back to the output buffer
+    for i in prange(out.size):
+        for b in range(1,nt):
+            out.flat[i] += buf[b].flat[i]
+    #multiply by d if necessary
+    if d != 1:
+        for i in prange(out.size):
+            out.flat[i] *= d
+
+def histogram2d(x,y,n=10,range=None,density=False,keep_outliers=False,out=None):
+    """2D histogram with uniform bins. Accelerated by numba
+    x, y: array_like
+      x and y coordinates of each point. x and y will be flattened
+    n : scalar or (nx, ny)
+      number of bins in x and y
+    range : None or ((xmin,xmax),(ymin,ymax))
+      range of bins. If any is None, the min/max is computed
+    density : optional, bool
+      if True, compute bin_count / (sample_count * bin_area)
+    keep_outliers : optional, bool
+      if True, add rows and columns to each edge of the histogram to count the outliers
+    out : array_like, optional, shape = (nx, ny)
+      Array to store output. Note that for compatibility with numpy's histogram2d, out
+      is indexed out[x,y]. If keep_outliers is True, out must have shape (nx+2,ny+2)
+    """
+    x = np.asarray(x)
+    y = np.asarray(y)
+    if x.shape != y.shape:
+        raise RuntimeError("x and y must be same shape")
+    x = x.reshape(-1)
+    y = y.reshape(-1)
+    if range is None:
+        xmin,xmax = None,None
+        ymin,ymax = None,None
+    else:
+        xmin,xmax = range[0]
+        ymin,ymax = range[1]
+    if xmin is None or xmax is None:
+        xmm = aminmax(x)
+        if xmin is None: xmin = xmm[0]
+        if xmax is None: xmax = xmm[1]
+    if ymin is None or ymax is None:
+        ymm = aminmax(y)
+        if ymin is None: ymin = ymm[0]
+        if ymax is None: ymax = ymm[1]
+    if np.isscalar(n):
+        nx,ny = n,n
+    else:
+        nx,ny = n
+    if keep_outliers:
+        out_shape = (nx+2,ny+2)
+    else:
+        out_shape = (nx,ny)
+    if density:
+        # 1/ (sample_count * bin_area)
+        d = (nx*ny)/(len(x)*(xmax-xmin)*(ymax-ymin))
+        if out is None:
+            out = np.empty(out_shape,np.float64)
+    else:
+        d = 1
+        if out is None:
+            out = np.empty(out_shape,np.uint64)
+    _histogram2d(out, x,y,nx,ny,xmin,xmax,ymin,ymax,d,keep_outliers)
+    return out
+
+@njit(parallel=True)
+def _histogram(out,x,nx,xmin,xmax,d,keep):
+    """helper for histogram2d"""
+    dx = nx/(xmax-xmin)
+    nt = numba.config.NUMBA_NUM_THREADS
+    for i in prange(out.size):
+        out[i] = 0
+    #make a buffer for each thread:
+    buf = [out] + [np.zeros(out.shape,out.dtype) for i in range(nt-1)]
+    ss = (x.shape[0] + nt - 1)//nt
+    if keep:
+        for b in prange(nt):
+            for i in range(b*ss,(b+1)*ss):
+                if i >= x.shape[0]: break
+                #do the histogram within each thread
+                j = _digitize(x[i], xmin, xmax, dx, nx)
+                buf[b][j+1] += 1
+    else:
+        for b in prange(nt):
+            for i in range(b*ss,(b+1)*ss):
+                if i >= x.shape[0]: break
+                j = _digitize(x[i], xmin, xmax, dx, nx)
+                if j >= 0 and j < nx:
+                    buf[b][j] += 1
+    #reduce back to the output buffer
+    for i in prange(out.size):
+        for b in range(1,nt):
+            out[i] += buf[b][i]
+        #multiply by d if necessary
+        if d != 1:
+            out[i] *= d
+
+def histogram(x,n=10,range=None,density=False,keep_outliers=False):
+    """1D histogram with uniform bins. Accelerated by numba
+    x: array_like
+      x coordinates of each point. x will be flattened
+    n : scalar
+      number of bins in x
+    range : None or (xmin,xmax)
+      range of bins. If None, the min/max is computed
+    density : optional, bool
+      if True, compute bin_count / (sample_count * bin_size)
+    keep_outliers : optional, bool
+      if True, add rows and columns to each edge of the histogram to count the outliers
+    """
+    x = np.asarray(x)
+    x = x.reshape(-1)
+    if range is None:
+        xmin,xmax = None,None
+    else:
+        xmin,xmax = range
+    if xmin is None or xmax is None:
+        xmm = aminmax(x)
+        if xmin is None: xmin = xmm[0]
+        if xmax is None: xmax = xmm[1]
+    if keep_outliers:
+        out_shape = (n+2,)
+    else:
+        out_shape = (n,)
+    if density:
+        # 1/ (sample_count * bin_area)
+        d = n/(len(x)*(xmax-xmin))
+        out = np.empty(out_shape,np.float64)
+    else:
+        d = 1
+        out = np.empty(out_shape,np.uint64)
+    _histogram(out, x,n,xmin,xmax,d,keep_outliers)
+    return out
+
+@njit(parallel=True)
+def aminmax(a):
+    """Return (min,max) of array using np.min, np.max
+    The many options of np.min & max are not supported by Numba for now.
+    """
+    vmin = np.min(a)
+    vmax = np.max(a)
+    return vmin,vmax
+
 def lanczos(a,n):
     """lanczos filter kernel, order a, n points"""
     x = np.linspace(-a+.5,a-.5,n)
