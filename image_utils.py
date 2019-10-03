@@ -34,6 +34,132 @@ def load_png16(fname):
         else:
             arr = np.array(img)
         return arr
+
+@njit(parallel=True)
+def _laea(za,za0,out):
+    """lambert azimuth equal area projection helper"""
+    z0, a0 = za0[0], za0[1]
+    z, a = za[0], za[1]
+
+    ca, sa = np.cos(a-a0), np.sin(a-a0)
+    cz, sz = np.cos(z), np.sin(z)
+    cz0, sz0 = np.cos(z0), np.sin(z0)
+
+    k = np.sqrt(2/(1+cz0*cz+sz0*sz*ca))
+
+    out[0] = k*sz*sa
+    out[1] = k*(sz0*cz - cz0*sz*ca)
+
+def laea(za, za0=None, out=None):
+    """Lambert Azimuthal Equal-Area Projection, per http://mathworld.wolfram.com/LambertAzimuthalEqual-AreaProjection.html
+    N.B. This routine uses image coordinates with +x as East, and +y as South. That is, 0 azimuth is in the -y direction
+    and 90 deg azimuth is in the +x direction.
+    The equator (zenith=pi/2) is at radius sqrt(2) in the x-y plane. The antipole is at radius 2.
+    za: shape = (2,...)
+        za[0] = zenith, za[1] = azimuth
+    za0: pole coordinates, defaults to [0,0] if None
+    returns: xy
+    """
+    za = np.asarray(za)
+    if out is None:
+        xy = np.empty_like(za)
+    else:
+        xy = out
+    if za0 is None:
+        za0 = [0, 0]
+    _laea(za,za0,xy)
+    return xy
+
+@njit(parallel=True)
+def _laea_i(xy,za0,out):
+    """inverse laea helper"""
+    z0, a0 = za0[0], za0[1]
+    cz0, sz0 = np.cos(z0), np.sin(z0)
+    x, y = xy[0], xy[1]
+    R2 = x**2 + y**2
+    out[0] = np.arccos(0.5*(y*np.sqrt(4-R2)*sz0 - (R2-2)*cz0))
+    out[1] = a0 + np.arctan2(x*np.sqrt(-R2*(R2-4)), -
+                            np.sqrt(R2)*((R2-2)*sz0 + y*np.sqrt(4-R2)*cz0))
+
+def laea_i(xy, za0=None, out=None):
+    """inverse Lambert Azimuthal Equal-Area Projection, per http://mathworld.wolfram.com/LambertAzimuthalEqual-AreaProjection.html
+    N.B. this routine uses image coordinates with +x as East, and +y as South. That is, 0 azimuth is in the -y direction
+    and 90 deg azimuth is in the +x direction.
+    The equator (zenith=pi/2) is at radius sqrt(2) in the x-y plane. The antipole is at radius 2.
+    xy: shape = (2,...)
+    za0: pole coordinats, defaults to [0,0] if None
+    returns: za, za[0] = zenith, za[1] = azimuth
+    """
+    xy = np.asarray(xy)
+    if out is None:
+        za = np.empty_like(xy)
+    else:
+        za = out
+    if za0 is None:
+        za0 = [0, 0]
+    _laea_i(xy,za0,za)
+    return za
+
+@njit(parallel=True)
+def _cea(za,za0,out):
+    z0, a0 = za0[0], za0[1]
+    z, a = za[0], za[1]
+    out[0] = (a-a0)*np.sin(z0)
+    out[1] = -np.cos(z)/np.sin(z0)
+
+def cea(za,za0=None,out=None):
+    """Cylindrical Equal-Area Projection, per http://mathworld.wolfram.com/CylindricalEqual-AreaProjection.html
+    N.B. This routine uses image coordinates with +x as East and +y as South. That is, zenith=0 is at y=-1/sin(z0) and zenith=pi
+    is at y = 1/sin(z0).
+    Parameters:
+      za : shape = (2, ...)
+        za[0] = zenith angle, za[1] = azimuth angle (in radians)
+      za0 : standard zenith and azimuth.
+        The standard aziumth maps to the center of the projection (x=0). The standard zenith angle is the zenith with minimal
+        distortion. Standard values are pi/2 (Lambert), pi/4 (Gall), pi/6 (Behrmann), 5*pi/18 (Balthasart)
+    Returns:
+      xy : shape = za.shape
+    """
+    za = np.asarray(za)
+    if out is None:
+        xy = np.empty_like(za)
+    else:
+        xy = out
+    if za0 is None:
+        za0 = [np.pi/2,0.]
+    _cea(za,za0,xy)
+    return xy
+
+@njit(parallel=True)
+def _cea_i(xy,za0,out):
+    x,y = xy[0], xy[1]
+    z0,a0 = za0[0], za0[1]
+    out[0] = np.arccos(-y*np.sin(z0))
+    out[1] = x/np.sin(z0) + a0
+
+def cea_i(xy, za0=None, out=None):
+    """inverse Cylindrical Equal-Area Projection, per http://mathworld.wolfram.com/CylindricalEqual-AreaProjection.html
+    N.B. This routine uses image coordinates with +x as East and +y as South. That is, zenith=0 is at y=-1/sin(z0) and zenith=pi
+    is at y = 1/sin(z0).
+    Parameters:
+      xy : shape = (2, ...)
+      za0 : standard zenith and azimuth.
+        The standard aziumth maps to the center of the projection (x=0). The standard zenith angle is the zenith with minimal
+        distortion. Standard values are pi/2 (Lambert), pi/4 (Gall), pi/6 (Behrmann), 5*pi/18 (Balthasart)
+    Returns:
+      za : shape = xy.shape
+        za[0] = zenith angle, za[1] = azimuth angle (in radians)
+    """
+    xy = np.asarray(xy)
+    if out is None:
+        za = np.empty_like(xy)
+    else:
+        za = out
+    if za0 is None:
+        za0 = [np.pi/2,0.]
+    _cea_i(xy,za0,za)
+    return za
+
 @njit(parallel=True)
 def _corr1d_0(input, filter, output, wrap=True, cval=0.0):
     """Correlation along axis 0, parallelized for C-order arrays
@@ -235,10 +361,10 @@ def warp_qmc(image, inverse_map, map_args={}, output_shape=None, nval=0., n=9, m
     - `n` increases the time complexity linearly.
     """
     #check and sanitize inputs
-#    if preserve_range:
-#        image = np.asarray(image, np.double)
-#    else:
-#        image = ski.img_as_float(image)
+    #if preserve_range:
+    #    image = np.asarray(image, np.double)
+    #else:
+    #    image = ski.img_as_float(image)
 
     input_shape = np.array(image.shape)
 
@@ -326,7 +452,9 @@ def warp_qmc(image, inverse_map, map_args={}, output_shape=None, nval=0., n=9, m
 
 
 def circle_mask(radius,size=None,offset=None,inner=0,subsample_limit=4,center=False):
-    """subsampled circle, with sub-pixel offset"""
+    """subsampled circle, with sub-pixel offset
+    Each pixel's value is the area of the pixel covered by the circle.
+    """
     def subsample(x,y,sz,r,lim):
         d = np.hypot(x, y)
         if lim==0: #hit recursion limit
