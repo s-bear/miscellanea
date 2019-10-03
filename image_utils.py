@@ -5,9 +5,35 @@
 import numpy as np
 from scipy.ndimage.filters import convolve1d
 from .sobol import sobol
-
+from PIL import Image, PngImagePlugin
 from numba import njit, prange
 
+
+def save_png16(fname, arr, title=None):
+    """save an array as a 16-bit png, the data range is stored in the text chunk with keys 'min' and 'max'
+    Workaround for a PIL bug https://github.com/python-pillow/Pillow/issues/2970"""
+    vmin, vmax = np.amin(arr), np.amax(arr)
+    buf = ((arr-vmin)*((2**16-1)/(vmax-vmin))).astype(np.uint16)
+    img = Image.frombytes('I', buf.T.shape, buf, 'raw', 'I;16')
+    nfo = PngImagePlugin.PngInfo()
+    if title is not None:
+        nfo.add_text('Title', title)
+    nfo.add_text('min', '{}'.format(vmin))
+    nfo.add_text('max', '{}'.format(vmax))
+    img.save(fname, 'png', pnginfo=nfo)
+
+
+def load_png16(fname):
+    """load a 16-bit png into an array, scaling data to 'min' and 'max' stored in the text chunk"""
+    with Image.open(fname) as img:
+        if hasattr(img, 'text') and 'min' in img.text and 'max' in img.text:
+            vmin = float(img.text['min'])
+            vmax = float(img.text['max'])
+            arr = np.array(img).astype(np.float64) * \
+                ((vmax-vmin)/(2**16-1)) + vmin
+        else:
+            arr = np.array(img)
+        return arr
 @njit(parallel=True)
 def _corr1d_0(input, filter, output, wrap=True, cval=0.0):
     """Correlation along axis 0, parallelized for C-order arrays
