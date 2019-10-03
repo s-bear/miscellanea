@@ -8,6 +8,31 @@ import numba
 from numba import njit, vectorize, prange
 from scipy import stats
 
+def _cinterval(start,stop,step,center,balanced):
+    """find start,stop,step to make a centered range or slice"""
+    if stop is None:
+        start,stop = 0,start
+    if center is None:
+        center = (start + stop)//2
+    #offset start to hit center
+    start += center - range(start,center,step)[-1]
+    if balanced:
+        #how many elements before & after center
+        l = len(range(start,center,step))
+        r = len(range(center,stop,step)) - 1
+        if l < r:  # cut off right side
+            stop = range(center,stop,step)[l+1]
+        elif r < l: #cut off left side
+            start = range(start,center,step)[-r]
+    return (start,stop,step)
+
+def cslice(start,stop=None,step=1,center=None,balanced=True):
+    return slice(*_cinterval(start,stop,step,center,balanced))
+
+def crange(start,stop=None,step=1,center=None,balanced=True):
+    """make a range that includes the centerpoint between start and stop"""
+    return range(*_cinterval(start,stop,step,center,balanced))
+
 _types = ['i1','u1','i2','u2','i4','u4','i8','u8','f4','f8']
 @vectorize(["{T}({T},{T},{T})".format(T=t) for t in _types],target='parallel')
 def wrap(x, vmin, vmax):
@@ -301,8 +326,6 @@ def bin(x,y,bins,xmin=None,xmax=None,min_count=1,keep_oob=True,keep_empty=True):
     else:
         return np.array(not_empty), y_binned
 
-
-
 def bin_wrap(x,y,bins,xmin=None,xmax=None,center=0,min_count=1,keep_empty=True):
     """for binning periodic data (like angles)"""
     #center is a relative offset of the 1st bin's center from xmin
@@ -348,6 +371,95 @@ def mean_conf(data,conf=0.90):
     #get the interval from Student's t dist
     iv = stats.t.interval(conf,n-1,scale=se)
     return m,iv
+
+@njit(parallel=True)
+def update_moments(n, x, m1, m2):
+    """Add the n'th sample, x, to the 1st and 2nd moments, m1 and m2.
+    E.g. on the first sample, m1 = x1, m2 = 0
+    on the second sample, use m1,m2 = update_moments(2, x2, m1, m2)
+    m1 is the mean, m2 is the second moment
+    sample variance = m2/(n-1), population variance = m2/n
+    Parameters:
+        n : scalar, sample number (for the first sample, n = 1)
+        x : scalar or array_like, sample
+        m1 : as x, the previous mean
+        m2 : as x, the previous second moment
+    Returns:
+        m1, m2 : updated mean and second moment
+
+    See:
+        Welford, B.P. "Note on a Method for Calculating Corrected Sums of Squares and Products"
+        Technometrics Vol. 4, No. 3 (Aug 1962), pp. 419-420
+        https://dx.doi.org/10.2307/1266577
+    """
+    #use Welford's algorithm to maintain stability
+    delta = x - m1  # difference from previous mean
+    m1 += delta/n
+    m2 += delta*(x-m1)
+    return m1, m2
+
+@njit(parallel=True)
+def update_moments_w(x, w, m1, m2, w_sum):
+    """Update statistical moments m1, m2 with a sample x with frequency-weight w
+    E.g. on the first sample, m1 = w1*x1, m2 = 0
+    on the second sample, use m1,m2 = update_moments(w2, x2, m1, m2)
+    m1 is the mean, m2 is the second moment
+    sample variance = m2/(n-1), population variance = m2/n
+    Parameters:
+        n : scalar, sample number (for the first sample, n = 1)
+        x : scalar or array_like, sample
+        m1 : as x, the previous mean
+        m2 : as x, the previous second moment
+    Returns:
+    m1, m2 : updated mean and second moment
+
+    See:
+        Welford, B.P. "Note on a Method for Calculating Corrected Sums of Squares and Products"
+        Technometrics Vol. 4, No. 3 (Aug 1962), pp. 419-420
+        https://dx.doi.org/10.2307/1266577
+    """
+    #use Welford's algorithm to maintain stability
+    if w == 0:
+        return m1, m2, w_sum
+    
+    w_sum += w
+    delta = x - m1  # difference from previous mean
+    m1 += delta*w/w_sum
+    m2 += delta*(x-m1)*w
+    return m1, m2, w_sum
+
+class SampleStats:
+    def __init__(self,weighted=False):
+        self.n = 0
+        self.mean = None
+        self.m2 = None
+        self.weighted = weighted
+
+    def add_sample(self, x, w=1.0):
+        if self.mean is None: #init
+            self.mean = np.array(x, np.result_type(1.0, x))
+            self.m2 = np.zeros_like(self.mean)
+            if self.weighted:
+                self.n = w
+            else:
+                self.n = 1
+        else: #typical update
+            if self.weighted:
+                #update_moments does it all
+                self.mean, self.m2, self.n = update_moments_w(x, w, self.mean, self.m2, self.n)
+            else:
+                self.n += 1
+                self.mean, self.m2 = update_moments(self.n, x, self.mean, self.m2)
+
+    @property
+    def var(self):
+        """Sample variance 'm2/(n-1)' -- use if weights are frequency counts"""
+        return self.m2/(self.n-1)
+
+    @property
+    def pvar(self):
+        """Population variance 'm2/n' -- use if weights are probabilities or otherwise normalized"""
+        return self.m2/self.n
 
 ##########
 # Angles #
