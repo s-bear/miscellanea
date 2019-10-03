@@ -306,7 +306,6 @@ def _smooth_cmap(a,b,c,f=None):
         return lambda x: np.where(x < 0.5, b+(a-b)*f(1-2*x), b+(c-b)*f(2*x-1))
     return {'red': cf(ra,rb,rc),'green':cf(ga,gb,gc),'blue':cf(ba,bb,bc)}
 
-
 def f_cusp(x): return np.sqrt(((x+1)**2-1)/3)
 
 RdKBu = make_colormap('RdKBu',_smooth_cmap('#ff3030','0','#3030ff',f_cusp),512)
@@ -317,6 +316,33 @@ OrKCy = make_colormap('OrKCy',_smooth_cmap('#ffa632','0','#32d3ff',f_cusp),512)
 CyKOr = make_colormap('CyKOr',_smooth_cmap('#32d3ff','0','#ffa632',f_cusp),512)
 
 RdPBu = make_colormap('RdPBu',_smooth_cmap('#f14245','#ce54b4','#1f86e0',f_cusp),512)
+
+def lch_colors(c0, c1, n=6,ccw=True):
+    #Lab spiral colormap
+    #start (dark red): RGB = 0x4d1209
+    #end (bright yellow): RGB = 0xedfaa3
+    from skimage import color
+    r0,g0,b0 = mpl.colors.colorConverter.to_rgb(c0)
+    r1,g1,b1 = mpl.colors.colorConverter.to_rgb(c1)
+    lab0, lab1 = color.rgb2lab(np.array([[[r0,g0,b0], [r1,g1,b1]]]),'E')[0]
+    l0,a0,b0 = lab0
+    l1,a1,b1 = lab1
+    #cylindrical coordinates (aka LCH)
+    c0,h0 = np.hypot(a0,b0), np.arctan2(b0,a0)
+    c1,h1 = np.hypot(a1,b1), np.arctan2(b1,a1)
+    if ccw:
+        while h0 <= h1:
+            h0 += 2*np.pi
+    else:
+        while h1 <= h0:
+            h1 += 2*np.pi
+    #interpolate
+    l = np.linspace(l0,l1,n)
+    c = np.linspace(c0,c1,n)
+    h = np.linspace(h0,h1,n)
+    #back to lab, then rgb
+    lab = np.stack((l,c*np.cos(h),c*np.sin(h)),-1)[None]
+    return color.lab2rgb(lab,'E')
 
 ##############
 # Formatting #
