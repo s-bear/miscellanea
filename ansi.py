@@ -4,6 +4,11 @@
 
 #try the colorama package for displaying ansi coded text on windows
 
+try:
+    import colorama
+except:
+    pass
+
 import re
 _len = len
 """ANSI color codes and helpful functions"""
