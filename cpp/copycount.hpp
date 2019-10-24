@@ -35,10 +35,10 @@ protected:
 
 public:
     //default constructor
-    copycount_t() : count(nullptr) {}
+    copycount_t() noexcept : count(nullptr) {}
     //set release function only -- use set(item_type) to set counted item later
-    copycount_t(const release_type &release) : count(nullptr), release(release) {}
-    copycount_t(release_type &&release) : count(nullptr), release(std::move(release)) {}
+    copycount_t(const release_type &release) noexcept : count(nullptr), release(release) {}
+    copycount_t(release_type &&release) noexcept : count(nullptr), release(std::move(release)) {}
     //set item and release function together. Use move for item because copycount takes ownership of it
     copycount_t(item_type &&item, const release_type &release) : count(new std::atomic_size_t(1)), item(std::move(item)), release(release) {}
     copycount_t(item_type &&item, release_type &&release) : count(new std::atomic_size_t(1)), item(std::move(item)), release(release) {}
@@ -50,7 +50,7 @@ public:
         increment();
     }
     //move
-    copycount_t(copycount_t &&other) : count(other.count), item(std::move(other.item)), release(std::move(other.release))
+    copycount_t(copycount_t &&other) noexcept : count(other.count), item(std::move(other.item)), release(std::move(other.release))
     {
         //make sure to null other.count so that it doesn't decrement & release
         other.count = nullptr;
@@ -127,10 +127,16 @@ public:
     }
     //get() returns a const reference so that you can't modify the managed object
     //but you can make an unmanaged copy if you want to
-    const item_type &get() const { return item; }
-    operator item_type() const { return item; }
+    const item_type &get() const {
+        if (count == nullptr) throw std::runtime_error("attempted access of invalid value");
+        return item; 
+    }
+    operator item_type() const { return get(); }
     const release_type &get_release() const { return release; }
 
+    bool valid() const noexcept {
+        return count != nullptr;
+    }
     //comparisons
     bool operator==(const copycount_t &other) const
     {
