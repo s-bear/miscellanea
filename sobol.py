@@ -50,7 +50,7 @@ class sobol:
             #the bits of _poly[i] gives the form of polynomial I
             #find the degree of _polynomial I from binary encoding
             j = sobol._poly[i]
-            m = sobol.i4_bit_hi1(j)
+            m = sobol.i4_bit_hi1(j)-1
             #expand this bit pattern to separate components
             includ = np.zeros(m,np.int32)
             for k in range(m-1, -1, -1):
