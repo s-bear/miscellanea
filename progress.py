@@ -59,7 +59,10 @@ class Progress:
     Task 2 [OOOOOOOOOO######~~~~] OK
 
     """
-    disp_width = os.get_terminal_size().columns
+    try:
+        disp_width = os.get_terminal_size().columns #fails if not running in a terminal
+    except:
+        disp_width = 80
     indent_str = ansi.style('|  ',fg=6,dim=True)
     prefix_str = ansi.style('\\_ ',fg=6,dim=True)
     min_bar_width = 20
