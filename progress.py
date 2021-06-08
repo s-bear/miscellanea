@@ -25,6 +25,7 @@ class Progress:
         '~' indicates skipped progress.
     ok_str : str, default 'OK'
     cont_str : str, default '...'
+    skip_str : str, default 'SKIP'
     fail_str : str, default 'FAIL'
         Printed to indicate various statuses. The right margin
         is sized to fit the longest of these strings with a space.
@@ -36,7 +37,9 @@ class Progress:
             pass
         with Progress('Task 1.2'):
             p.interrupt('a message')
-    with Progress('Task 2', 10) as p:
+    with Progress('Task 2'):
+        raise Progress.Skip
+    with Progress('Task 3', 10) as p:
         p.update(0) #start progress bar
         for i in range(5):
             time.sleep(1)
@@ -54,11 +57,24 @@ class Progress:
     |  |  \_ a message
     |  \_ Task 1.2 OK
     Task 1 OK
-    Task 2 [##########...       ]
+    Task 2 SKIP
+    Task 3 [##########...       ]
     |  \_ another message
-    Task 2 [OOOOOOOOOO######~~~~] OK
+    Task 3 [OOOOOOOOOO######~~~~] OK
 
     """
+    
+    class Skip(Exception):
+        """ Exception to skip out of a Progress context
+        
+        When raised within a Progress context, will skip to the end and issue a
+        SKIP message
+        e.g.
+        with Progress('Task'):
+            raise Progress.Skip
+        """
+        pass
+
     try:
         disp_width = os.get_terminal_size().columns #fails if not running in a terminal
     except:
@@ -69,6 +85,7 @@ class Progress:
     bar_chars = '[#O~]'
     ok_str   = ansi.style('OK',fg=2, bold=True)
     fail_str = ansi.style('FAIL',fg=1, bold=True)
+    skip_str = ansi.style('SKIP',fg=3, bold=True)
     cont_str = ansi.style('...',fg=4, bold=True)
 
     __depth = 0
@@ -83,11 +100,16 @@ class Progress:
         total : number, default 100
             The total value of the full progress bar
         quiet : bool, default False
-            If true, don't print anything
-        notify : callable (bool), default None
-            If not None, this is called when done.
-            notify(True) on success, notify(False) on failure.
-            Any exceptions raised by notify() will be suppressed.
+            If True, don't print anything
+        notify : None or callable(ex_info), default None
+            If not None, this is called when exiting the Progress context.
+            ex_info will be the (ex_type, ex_value, traceback) tuple describing any
+            current exception or (None,None,None) if there is no exception, as
+            per `sys.exc_info()`. The callable should return False to indicate
+            that the exception should be propagated up the call stack, or True
+            to indicate that it has been handled.
+            N.B. that usually Progress.Skip exceptions are suppressed upon exiting
+            the context, but if `notify` is given then it will override that behavior.
         """
         self.msg = message
         self.notify = notify
@@ -103,14 +125,18 @@ class Progress:
 
         self.avail_len = None
         #space + longest of the status strings:
-        self.status_len = 1 + max(ansi.len(Progress.ok_str), ansi.len(Progress.fail_str), ansi.len(Progress.cont_str))
+        self.status_len = 1 + max(map(ansi.len,(Progress.ok_str, Progress.fail_str, Progress.skip_str, Progress.cont_str)))
         #space + [ + min_bar_width + ] + status_len:
         self.min_bar_len = 3 + Progress.min_bar_width + self.status_len
 
-        self.quiet = quiet
+        self._quiet = quiet
 
+    @property
+    def quiet(self):
+        return self._quiet
+    
     def print(self,*args,**kwargs):
-        if not self.quiet: print(*args,**kwargs)
+        if not self._quiet: print(*args,**kwargs)
 
     def indent(self,msg,depth=None,pfx=None,sep='\n',width=None, crop=False):
         """indent(msg, depth=None, pfx=None, sep='\n', width=None, crop=False)
@@ -168,21 +194,22 @@ class Progress:
             return sep.join(lines)
 
     def __enter__(self):
-        #Depth management:
-        self.depth = Progress.__depth
-        if self.depth > 0: Progress.__stack[-1].interrupt() #let parent know we're starting a sub-task
-        Progress.__stack.append(self)
-        Progress.__depth += 1
+        if not self._quiet:
+            #Depth management:
+            self.depth = Progress.__depth
+            if self.depth > 0: Progress.__stack[-1].interrupt() #let parent know we're starting a sub-task
+            Progress.__stack.append(self)
+            Progress.__depth += 1
 
-        #wrap and indent our message
-        lines = self.indent(self.msg, self.depth, sep=None)
-        
-        #how much space is available for a status message
-        #or a progress bar at the end of the line?
-        self.avail_len = Progress.disp_width - ansi.len(lines[-1])
+            #wrap and indent our message
+            lines = self.indent(self.msg, self.depth, sep=None)
+            
+            #how much space is available for a status message
+            #or a progress bar at the end of the line?
+            self.avail_len = Progress.disp_width - ansi.len(lines[-1])
 
-        #print the lines
-        self.print(*lines,sep='\n',end='',flush=True)
+            #print the lines
+            self.print(*lines,sep='\n',end='',flush=True)
         return self
 
     def interrupt(self, message=None):
@@ -194,6 +221,7 @@ class Progress:
         message : str or None, default None
             If not None, the message is indented and printed.
         """
+        if self._quiet: return
         #newly interrupted?
         if not self.interrupted:
             s = ' ' + Progress.cont_str
@@ -226,12 +254,14 @@ class Progress:
         return False
 
     def update_increment(self, amt):
+        if self._quiet: return
         if self.current_progress is None:
             self.update(amt)
         else:
             self.update(self.current_progress + amt)
 
     def update(self, amt, fail=False):
+        if self._quiet: return
         #print continuation message if necessary:
         do_flush = self._continue()
 
@@ -277,25 +307,27 @@ class Progress:
 
         if do_flush or s: self.print(s, end='',flush=True)
 
-    def __exit__(self,etype,eval,trace):
-        self._continue()
-        
-        if self.current_progress is not None:
-            self.update(self.total_progress,True)
-        
-        if etype is None:
-            msg = ' ' + Progress.ok_str
-        else:
-            msg = ' ' + Progress.fail_str
-        
-        self.print(msg, flush=True)
-        #revert depth counter
-        Progress.__stack.pop()
-        Progress.__depth = self.depth
-        #True to suppress exception
+    def __exit__(self,etype,evalue,etrace):
+        ok = True
+        if not self._quiet:
+            self._continue()
+            
+            if self.current_progress is not None:
+                self.update(self.total_progress,True)
+            
+            if etype is None:
+                msg = ' ' + Progress.ok_str
+            elif etype is Progress.Skip:
+                msg = ' ' + Progress.skip_str
+            else:
+                msg = ' ' + Progress.fail_str
+                ok = False
+            
+            self.print(msg, flush=True)
+            #revert depth counter
+            Progress.__stack.pop()
+            Progress.__depth = self.depth
         if self.notify is not None:
-            try: 
-                self.notify(etype is None)
-            except:
-                pass
-        return False
+            return self.notify((etype,evalue,etrace))
+        else:
+            return ok
